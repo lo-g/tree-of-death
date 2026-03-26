@@ -1,16 +1,20 @@
 {
   "urls": [
-    "https://antenati.cultura.gov.it/ark:/12657/an_ua334892/wRv8rGx",
     "https://antenati.cultura.gov.it/ark:/12657/an_ua36061642/wEa3Pk7"
   ],
   "queries": [
-    "Giovanni",
-    "Bourne",
-    "Sebastiano Montanaro"
+    "Mosca"
   ],
   "aggressiveness": "gentle",
   "max_pages": null,
   "output_format": "json",
   "csv_output": "results.csv",
-  "dry_run": false
+  "dry_run": false,
+  "ocr_backend": "hybrid",
+  "ocr_model": "microsoft/trocr-large-handwritten",
+  "semantic_search": false,
+  "semantic_threshold": 42.0,
+  "semantic_model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "debug_ocr_text": false,
+  "debug_ocr_dir": null
 }

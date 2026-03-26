@@ -7,10 +7,12 @@ def test_config_parsing_supports_single_url_and_query() -> None:
     assert config.queries == ["Giovanni"]
 
 
-def test_config_requires_source() -> None:
-    try:
-        normalize_input({"query": "x"})
-    except ValueError as exc:
-        assert "URL or --input-folder" in str(exc)
-    else:
-        raise AssertionError("Expected ValueError")
+def test_config_defaults_to_local_input_folder_when_source_missing() -> None:
+    config = normalize_input({"query": "x"})
+    assert config.input_folder is not None
+
+
+def test_config_parses_ocr_backend_options() -> None:
+    config = normalize_input({"query": "x", "ocr_backend": "trocr", "ocr_model": "microsoft/trocr-large-handwritten"})
+    assert config.ocr_backend == "trocr"
+    assert config.ocr_model == "microsoft/trocr-large-handwritten"

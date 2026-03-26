@@ -6,9 +6,12 @@ from pathlib import Path
 from typing import Any
 
 from src.models import SearchInput
+from src.ocr.factory import SUPPORTED_OCR_BACKENDS
 
 _ALLOWED_AGGRESSIVENESS = {"gentle", "balanced", "deep"}
 _ALLOWED_OUTPUT = {"table", "json"}
+_DEFAULT_INPUT_FOLDER = "input_images"
+_DEFAULT_SEMANTIC_THRESHOLD = 42.0
 
 
 def load_config_file(path: str) -> dict[str, Any]:
@@ -35,6 +38,10 @@ def normalize_input(payload: dict[str, Any]) -> SearchInput:
     if single_url:
         urls = [single_url] + [u for u in urls if u != single_url]
 
+    input_folder = payload.get("input_folder")
+    if not urls and not input_folder:
+        input_folder = str(ensure_default_input_dir())
+
     queries = payload.get("queries") or []
     single_query = payload.get("query")
     if single_query:
@@ -48,15 +55,30 @@ def normalize_input(payload: dict[str, Any]) -> SearchInput:
     if output_format not in _ALLOWED_OUTPUT:
         raise ValueError(f"Invalid output format: {output_format}")
 
+    semantic_threshold = float(payload.get("semantic_threshold", _DEFAULT_SEMANTIC_THRESHOLD))
+    if semantic_threshold < 0 or semantic_threshold > 100:
+        raise ValueError("semantic_threshold must be between 0 and 100")
+
+    ocr_backend = payload.get("ocr_backend", "hybrid")
+    if ocr_backend not in SUPPORTED_OCR_BACKENDS:
+        raise ValueError(f"Invalid ocr_backend: {ocr_backend}")
+
     result = SearchInput(
         urls=urls,
-        input_folder=payload.get("input_folder"),
+        input_folder=input_folder,
         queries=queries,
         aggressiveness=aggressiveness,
         max_pages=payload.get("max_pages"),
         output_format=output_format,
         csv_output=payload.get("csv_output"),
         dry_run=bool(payload.get("dry_run", False)),
+        semantic_search=bool(payload.get("semantic_search", False)),
+        semantic_threshold=semantic_threshold,
+        semantic_model=payload.get("semantic_model"),
+        debug_ocr_text=bool(payload.get("debug_ocr_text", False)),
+        debug_ocr_dir=payload.get("debug_ocr_dir"),
+        ocr_backend=ocr_backend,
+        ocr_model=payload.get("ocr_model"),
     )
 
     if not result.urls and not result.input_folder:
@@ -75,3 +97,9 @@ def ensure_cache_dir() -> Path:
     cache_dir = Path(".cache")
     cache_dir.mkdir(exist_ok=True)
     return cache_dir
+
+
+def ensure_default_input_dir() -> Path:
+    input_dir = Path(_DEFAULT_INPUT_FOLDER)
+    input_dir.mkdir(exist_ok=True)
+    return input_dir

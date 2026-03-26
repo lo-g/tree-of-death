@@ -7,7 +7,7 @@ from typing import Literal
 
 Aggressiveness = Literal["gentle", "balanced", "deep"]
 SourceType = Literal["remote", "local"]
-MatchOrigin = Literal["index", "ocr", "fuzzy"]
+MatchOrigin = Literal["index", "ocr", "fuzzy", "semantic"]
 
 
 @dataclass
@@ -20,6 +20,13 @@ class SearchInput:
     output_format: Literal["table", "json"] = "table"
     csv_output: str | None = None
     dry_run: bool = False
+    semantic_search: bool = False
+    semantic_threshold: float = 42.0
+    semantic_model: str | None = None
+    debug_ocr_text: bool = False
+    debug_ocr_dir: str | None = None
+    ocr_backend: str = "hybrid"
+    ocr_model: str | None = None
 
 
 @dataclass
@@ -54,6 +61,7 @@ class MatchResult:
     snippet: str
     backend: str
     origin: MatchOrigin
+    semantic_score: float | None = None
     warnings: list[str] = field(default_factory=list)
 
 

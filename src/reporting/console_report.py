@@ -9,13 +9,14 @@ def build_table_report(results: list[SourceProcessingResult]) -> str:
     if not rows:
         return "No matches found."
 
-    headers = ["Source", "Query", "Page", "Confidence", "Backend", "Origin", "Snippet"]
+    headers = ["Source", "Query", "Page", "Confidence", "Semantic", "Backend", "Origin", "Snippet"]
     data = [
         [
             row.source_id,
             row.query,
             str(row.page_number),
             f"{row.confidence:.2f}",
+            "-" if row.semantic_score is None else f"{row.semantic_score:.2f}",
             row.backend,
             row.origin,
             row.snippet.replace("\n", " ")[:70],

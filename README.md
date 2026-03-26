@@ -13,7 +13,7 @@ Given one or more sources and a list of queries, it tries to report likely page 
 - Confidence score (0-100)
 - Text snippet (if available)
 - Backend used
-- Match origin (`index`, `ocr`, `fuzzy`)
+- Match origin (`index`, `ocr`, `fuzzy`, `semantic`)
 - Warnings and errors
 
 ## Key principles
@@ -37,12 +37,80 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
+Optional dependencies for semantic reranking and transformer OCR:
+
+```bash
+pip install -r requirements-ml.txt
+```
+
+Kraken OCR note:
+
+- Kraken is typically used on Linux/macOS with Python 3.9-3.11.
+- On Windows or newer Python versions, install may fail with `No matching distribution found`.
+- Recommended workaround: run Kraken in WSL (Ubuntu) with Python 3.11, then use `--ocr-backend kraken`.
+
+Install Tesseract OCR engine (required for real OCR from images):
+
+- Windows: install "Tesseract OCR" and ensure `tesseract.exe` is in `PATH`
+- Linux: install package `tesseract-ocr` (and `tesseract-ocr-ita` for Italian)
+- macOS: `brew install tesseract tesseract-lang`
+
+### Windows quick setup (PowerShell)
+
+```powershell
+winget install UB-Mannheim.TesseractOCR
+```
+
+Typical install path:
+
+`C:\Program Files\Tesseract-OCR\tesseract.exe`
+
+Verify installation:
+
+```powershell
+tesseract --version
+```
+
+If command is not found, add it to PATH for the current shell:
+
+```powershell
+$env:Path += ';C:\Program Files\Tesseract-OCR'
+tesseract --version
+```
+
+Persist PATH for future shells:
+
+```powershell
+setx PATH "$env:PATH;C:\Program Files\Tesseract-OCR"
+```
+
+If `ita.traineddata` / `lat.traineddata` are missing and you cannot write to `C:\Program Files`, use a project-local `tessdata` folder:
+
+```powershell
+$td = "$PWD\tessdata"
+New-Item -ItemType Directory -Force -Path $td | Out-Null
+
+Invoke-WebRequest https://github.com/tesseract-ocr/tessdata_fast/raw/main/ita.traineddata -OutFile "$td\ita.traineddata"
+Invoke-WebRequest https://github.com/tesseract-ocr/tessdata_fast/raw/main/lat.traineddata -OutFile "$td\lat.traineddata"
+
+$env:TESSDATA_PREFIX = $td
+```
+
+Persist `TESSDATA_PREFIX` for future shells:
+
+```powershell
+setx TESSDATA_PREFIX "$PWD\tessdata"
+```
+
 ## Project layout
 
 ```text
 main.py
 requirements.txt
+requirements-ml.txt
 config.example.json
+config.kraken.example.json
+input_images/
 src/
   cli.py
   config.py
@@ -57,7 +125,10 @@ src/
     image_loader.py
   ocr/
     base.py
-    simple_backend.py
+    factory.py
+    kraken_backend.py
+    tesseract_backend.py
+    trocr_backend.py
   matching/
     normalize.py
     fuzzy_match.py
@@ -78,7 +149,12 @@ python main.py --url "https://antenati.cultura.gov.it/ark:/12657/an_ua334892/wRv
 python main.py --config config.example.json
 python main.py --url "https://antenati.cultura.gov.it/..." --query-file queries.txt --aggressiveness balanced
 python main.py --input-folder "C:\\records\\lessona_1868" --query-file queries.txt
+python main.py --query-file queries.txt
+python main.py --query "Mosca" --input-folder ".\\input_images" --semantic-search --semantic-threshold 42
+python main.py --query "Mosca" --input-folder ".\\input_images" --ocr-backend trocr --ocr-model "microsoft/trocr-large-handwritten"
 ```
+
+If you run without `--url` and without `--input-folder`, the tool uses `./input_images` by default and creates it if missing.
 
 ### Multiple URLs and direct queries
 
@@ -95,6 +171,44 @@ python main.py \
 ```bash
 python main.py --config config.example.json --output-format json --csv-output out.csv
 ```
+
+### Semantic rerank (optional)
+
+```bash
+python main.py --input-folder ".\\input_images" --query "Mosca" --semantic-search --semantic-threshold 42
+```
+
+Notes:
+- Requires packages from `requirements-ml.txt`; without them the tool logs a warning and continues with fuzzy-only matching.
+- Semantic score is reported in JSON output (`semantic_score`) and in table output (`Semantic` column).
+
+### OCR backend selection
+
+```bash
+# Hybrid OCR (recommended first): TrOCR + automatic Tesseract fallback
+python main.py --input-folder ".\\input_images" --query "Mosca" --ocr-backend hybrid --ocr-model "microsoft/trocr-large-handwritten"
+
+# Transformer handwritten OCR
+python main.py --input-folder ".\\input_images" --query "Mosca" --ocr-backend trocr --ocr-model "microsoft/trocr-large-handwritten"
+
+# Kraken OCR (requires a local .mlmodel path)
+python main.py --input-folder ".\\input_images" --query "Mosca" --ocr-backend kraken --ocr-model ".\\models\\kraken\\italian_htr.mlmodel"
+
+# Kraken using a dedicated config file
+python main.py --config config.kraken.example.json
+
+# Pure tesseract OCR
+python main.py --input-folder ".\\input_images" --query "Mosca" --ocr-backend tesseract --ocr-model "ita+lat+eng"
+```
+
+### OCR debug mode (see exactly what OCR reads)
+
+```bash
+python main.py --input-folder ".\\input_images" --query "Mosca" --debug-ocr-text --verbose
+```
+
+This prints OCR previews to terminal and dumps full OCR text per page to `.cache/ocr_debug/`.
+Use `--debug-ocr-dir <path>` to choose another output folder.
 
 ### Dry run (no remote fetches)
 
@@ -132,22 +246,28 @@ All profiles are polite and limited to the provided URL(s).
 2. Detect source type (remote URL vs local folder)
 3. Discover pages
 4. Load images
-5. Extract text via OCR backend (default placeholder sidecar backend)
+5. Extract text via selected OCR backend (`hybrid`, `tesseract`, `trocr`, or `kraken`)
 6. Normalize and fuzzy-match all queries
-7. Score candidates and rank by confidence
-8. Export as table/JSON/(optional) CSV
+7. (Optional) semantic rerank/filter of fuzzy candidates
+8. Score candidates and rank by confidence
+9. Export as table/JSON/(optional) CSV
 
 ## OCR backend in v1
 
-The default `SimpleOCRBackend` is intentionally lightweight:
+Supported OCR backends:
 
-- It reads a sidecar `.txt` file if available next to each image (`0001.jpg` -> `0001.txt`)
-- If no sidecar file exists, it returns empty text with low confidence
+- `hybrid` (default): `trocr` first, then automatic `tesseract` fallback on weak output
+- `tesseract`: robust baseline with multi-pass preprocessing
+- `trocr`: Transformer-based handwritten OCR via Hugging Face model (`--ocr-model`)
+- `kraken`: HTR engine using a local recognition model file (`--ocr-model` path to `.mlmodel`)
 
-This is by design so you can:
+Notes:
 
-- Run quick local experiments with manual transcriptions
-- Plug in a better handwritten OCR/HTR backend later without changing the pipeline
+- `tesseract` auto-detects `tesseract.exe` on Windows (`C:\Program Files\Tesseract-OCR\tesseract.exe`) if PATH is missing
+- `tesseract` auto-uses local `./tessdata` when `TESSDATA_PREFIX` is not set
+- `trocr` requires optional ML dependencies and first-run model download
+- `trocr` now falls back to line segmentation when full-page OCR is too short/empty
+- `kraken` requires optional ML dependencies and a local recognition model path
 
 ## Confidence scoring
 
@@ -165,11 +285,16 @@ Because viewer automation can be blocked, local mode is a primary path:
 
 1. User exports/downloads page images manually
 2. Put images in a folder
-3. (Optional but useful) add sidecar text files with the same basename
-4. Run:
+3. Run:
 
 ```bash
 python main.py --input-folder "C:\\records\\registry_1868" --query-file queries.txt --output-format json
+```
+
+Default local folder shortcut:
+
+```bash
+python main.py --query-file queries.txt --output-format json
 ```
 
 Output structure is the same as remote mode.
