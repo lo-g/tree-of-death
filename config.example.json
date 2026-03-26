@@ -1,0 +1,16 @@
+{
+  "urls": [
+    "https://antenati.cultura.gov.it/ark:/12657/an_ua334892/wRv8rGx",
+    "https://antenati.cultura.gov.it/ark:/12657/an_ua36061642/wEa3Pk7"
+  ],
+  "queries": [
+    "Giovanni",
+    "Bourne",
+    "Sebastiano Montanaro"
+  ],
+  "aggressiveness": "gentle",
+  "max_pages": null,
+  "output_format": "json",
+  "csv_output": "results.csv",
+  "dry_run": false
+}
